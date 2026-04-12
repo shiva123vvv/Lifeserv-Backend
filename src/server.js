@@ -1,16 +1,8 @@
 const express = require('express');
-const dotenv = require('dotenv');
-
-// Load environment variables
-dotenv.config();
-
+require('dotenv').config();
 const cors = require('cors');
-const { connectDB } = require('./config/database');
+const { connectDB } = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
-
-
-// Connect to database
-connectDB();
 
 const app = express();
 
@@ -32,25 +24,40 @@ app.use('/api/jobs', require('./routes/jobs'));
 
 // Health check
 app.get('/health', (req, res) => {
-    res.json({ status: 'OK', message: 'Lifeserv API is running' });
+    res.json({ 
+        status: 'OK', 
+        message: 'Lifeserv API is operational',
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Error handler (must be last)
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📡 Local: http://localhost:${PORT}`);
-    console.log(`🌐 Network: http://10.175.191.28:${PORT}`);
-    console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+// Start Server Wrapper
+const startServer = async () => {
+    try {
+        // Essential: Connect to DB before accepting traffic
+        await connectDB();
+
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 Lifeserv Backend operational on port ${PORT}`);
+            console.log(`📡 Environment: ${process.env.NODE_ENV || 'production'}`);
+        });
+    } catch (error) {
+        console.error('❌ Failed to start server due to DB connection issues:', error.message);
+        process.exit(1);
+    }
+};
+
+startServer();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-    console.log(`❌ Error: ${err.message}`);
-    server.close(() => process.exit(1));
+    console.error(`❌ Unhandled Rejection: ${err.message}`);
+    process.exit(1);
 });
 
 module.exports = app;
