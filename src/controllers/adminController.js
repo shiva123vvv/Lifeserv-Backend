@@ -12,49 +12,57 @@ const { Op } = require('sequelize');
 // @route   POST /api/v1/admin/login
 const adminLogin = async (req, res) => {
     try {
-        console.log("📥 Login request:", req.body);
         const { email, password } = req.body;
+        console.log(`📥 Login attempt for: ${email}`);
 
-        // 1. Validate input
-        if (!email || !password) {
-            return res.status(400).json({ success: false, message: "Email and password required" });
-        }
-
-        // 2. Find admin
+        // 1. Find admin
         const admin = await Admin.findOne({ where: { email } });
-        if (!admin) {
-            console.warn(`⚠️ Admin not found: ${email}`);
+        
+        // Debug Log
+        if (admin) {
+            console.log("✅ Admin found in database:", admin.email);
+        } else {
+            console.warn("⚠️ Admin not found for email:", email);
             return res.status(401).json({ success: false, message: "Invalid email or password" });
         }
 
-        // 3. Check password exists
+        // 2. Safe Password Comparison with Fallback
+        let isMatch = false;
+        
         if (!admin.password) {
             console.error(`❌ Admin password missing in DB for: ${email}`);
             return res.status(500).json({ success: false, message: "Server data inconsistency" });
         }
 
-        // 4. Compare password safely
-        const isMatch = await bcrypt.compare(password, admin.password);
+        // Check if it's a bcrypt hash (starts with $2)
+        if (admin.password.startsWith("$2")) {
+            isMatch = await bcrypt.compare(password, admin.password);
+        } else {
+            // Temporary plain text fallback for initial setup
+            console.warn(`🔒 [SECURITY WARNING] Using plain-text fallback for admin: ${email}`);
+            isMatch = (password === admin.password);
+        }
+
         if (!isMatch) {
             console.warn(`❌ Password mismatch for: ${email}`);
             return res.status(401).json({ success: false, message: "Invalid email or password" });
         }
 
-        // 5. Check JWT_SECRET
+        // 3. Check JWT_SECRET
         if (!process.env.JWT_SECRET) {
-            console.error("❌ JWT_SECRET missing");
-            return res.status(500).json({ success: false, message: "Server misconfiguration" });
+            console.error("❌ JWT_SECRET missing from environment");
+            return res.status(500).json({ success: false, message: "Server configuration error" });
         }
 
-        // 6. Generate token
+        // 4. Generate token
         const token = jwt.sign(
             { id: admin.id, role: admin.role || 'admin' },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
         );
 
-        // 7. Success response
-        console.log(`✅ Admin logged in successfully: ${email}`);
+        console.log(`🚀 Admin authenticated successfully: ${email}`);
+        
         return res.status(200).json({
             success: true,
             token,
@@ -66,7 +74,7 @@ const adminLogin = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("❌ Admin login error:", error);
+        console.error("❌ CRITICAL: Admin login error:", error);
         return res.status(500).json({
             success: false,
             message: "Internal server error",
