@@ -11,19 +11,64 @@ const { Op } = require('sequelize');
 // @route   POST /api/v1/admin/login
 const adminLogin = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
-    const admin = await Admin.findOne({ where: { email } });
+    
+    console.log(`📥 Login attempt for: ${email}`);
 
-    if (admin && (await admin.matchPassword(password))) {
-        const token = jwt.sign({ id: admin.id, role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '30d' });
-        res.json({
-            success: true,
-            token,
-            admin: { id: admin.id, email: admin.email, role: admin.role }
-        });
-    } else {
+    // 1. Validate Input
+    if (!email || !password) {
+        res.status(400);
+        throw new Error('Please provide both email and password');
+    }
+
+    // 2. Find Admin
+    const admin = await Admin.findOne({ where: { email } });
+    if (!admin) {
+        console.warn(`⚠️ Admin not found: ${email}`);
         res.status(401);
         throw new Error('Invalid email or password');
     }
+
+    // 3. Verify Password
+    let isMatch = false;
+    try {
+        isMatch = await admin.matchPassword(password);
+    } catch (pwError) {
+        console.error(`❌ Password comparison failed for ${email}:`, pwError.message);
+        res.status(500);
+        throw new Error('Authentication process failed. Please contact support.');
+    }
+
+    if (!isMatch) {
+        console.warn(`❌ Password mismatch for: ${email}`);
+        res.status(401);
+        throw new Error('Invalid email or password');
+    }
+
+    // 4. Validate JWT Secret
+    if (!process.env.JWT_SECRET) {
+        console.error('🚨 CRITICAL: JWT_SECRET is missing in environment variables');
+        res.status(500);
+        throw new Error('Server configuration error');
+    }
+
+    // 5. Generate Token
+    const token = jwt.sign(
+        { id: admin.id, role: 'admin' }, 
+        process.env.JWT_SECRET, 
+        { expiresIn: '30d' }
+    );
+
+    console.log(`✅ Admin logged in: ${email}`);
+    
+    res.json({
+        success: true,
+        token,
+        admin: { 
+            id: admin.id, 
+            email: admin.email, 
+            role: admin.role 
+        }
+    });
 });
 
 // @desc    Get Dashboard Stats
