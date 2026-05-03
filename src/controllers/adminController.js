@@ -1,6 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const { Admin, User, Provider, JobRequest, Withdrawal, PayoutMethod, sequelize } = require('../models');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
 
 /**
@@ -9,67 +10,70 @@ const { Op } = require('sequelize');
 
 // @desc    Admin Login
 // @route   POST /api/v1/admin/login
-const adminLogin = asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
-    
-    console.log(`📥 Login attempt for: ${email}`);
-
-    // 1. Validate Input
-    if (!email || !password) {
-        res.status(400);
-        throw new Error('Please provide both email and password');
-    }
-
-    // 2. Find Admin
-    const admin = await Admin.findOne({ where: { email } });
-    if (!admin) {
-        console.warn(`⚠️ Admin not found: ${email}`);
-        res.status(401);
-        throw new Error('Invalid email or password');
-    }
-
-    // 3. Verify Password
-    let isMatch = false;
+const adminLogin = async (req, res) => {
     try {
-        isMatch = await admin.matchPassword(password);
-    } catch (pwError) {
-        console.error(`❌ Password comparison failed for ${email}:`, pwError.message);
-        res.status(500);
-        throw new Error('Authentication process failed. Please contact support.');
-    }
+        console.log("📥 Login request:", req.body);
+        const { email, password } = req.body;
 
-    if (!isMatch) {
-        console.warn(`❌ Password mismatch for: ${email}`);
-        res.status(401);
-        throw new Error('Invalid email or password');
-    }
-
-    // 4. Validate JWT Secret
-    if (!process.env.JWT_SECRET) {
-        console.error('🚨 CRITICAL: JWT_SECRET is missing in environment variables');
-        res.status(500);
-        throw new Error('Server configuration error');
-    }
-
-    // 5. Generate Token
-    const token = jwt.sign(
-        { id: admin.id, role: 'admin' }, 
-        process.env.JWT_SECRET, 
-        { expiresIn: '30d' }
-    );
-
-    console.log(`✅ Admin logged in: ${email}`);
-    
-    res.json({
-        success: true,
-        token,
-        admin: { 
-            id: admin.id, 
-            email: admin.email, 
-            role: admin.role 
+        // 1. Validate input
+        if (!email || !password) {
+            return res.status(400).json({ success: false, message: "Email and password required" });
         }
-    });
-});
+
+        // 2. Find admin
+        const admin = await Admin.findOne({ where: { email } });
+        if (!admin) {
+            console.warn(`⚠️ Admin not found: ${email}`);
+            return res.status(401).json({ success: false, message: "Invalid email or password" });
+        }
+
+        // 3. Check password exists
+        if (!admin.password) {
+            console.error(`❌ Admin password missing in DB for: ${email}`);
+            return res.status(500).json({ success: false, message: "Server data inconsistency" });
+        }
+
+        // 4. Compare password safely
+        const isMatch = await bcrypt.compare(password, admin.password);
+        if (!isMatch) {
+            console.warn(`❌ Password mismatch for: ${email}`);
+            return res.status(401).json({ success: false, message: "Invalid email or password" });
+        }
+
+        // 5. Check JWT_SECRET
+        if (!process.env.JWT_SECRET) {
+            console.error("❌ JWT_SECRET missing");
+            return res.status(500).json({ success: false, message: "Server misconfiguration" });
+        }
+
+        // 6. Generate token
+        const token = jwt.sign(
+            { id: admin.id, role: admin.role || 'admin' },
+            process.env.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
+
+        // 7. Success response
+        console.log(`✅ Admin logged in successfully: ${email}`);
+        return res.status(200).json({
+            success: true,
+            token,
+            admin: {
+                id: admin.id,
+                email: admin.email,
+                role: admin.role
+            }
+        });
+
+    } catch (error) {
+        console.error("❌ Admin login error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: error.message
+        });
+    }
+};
 
 // @desc    Get Dashboard Stats
 // @route   GET /api/v1/admin/dashboard
