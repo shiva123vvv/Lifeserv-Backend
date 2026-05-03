@@ -124,11 +124,26 @@ const start = async () => {
 
         require('./config/firebase');
         await testConnection();
+        // ⚙️ Database Synchronization
+        // Enable { alter: true } to automatically create/update tables on Railway
         const { sequelize } = require('./config/db');
-        
-        // Sync models only in development
-        if (process.env.NODE_ENV === 'development') {
-            await sequelize.sync({ alter: true });
+        const models = require('./models');
+        const { Admin } = models;
+
+        logger.info('📡 Synchronizing database schema...');
+        await sequelize.sync({ alter: true });
+        logger.info('✅ Database schema synchronized');
+
+        // 👑 Seed Default Admin (if none exists)
+        const adminCount = await Admin.count();
+        if (adminCount === 0) {
+            logger.info('🌱 Seeding default admin account...');
+            await Admin.create({
+                email: 'admin@lifeserv.com',
+                password: 'admin123', // Will be hashed by model hook if present, or stored as is
+                role: 'admin'
+            });
+            logger.info('✅ Default admin created: admin@lifeserv.com / admin123');
         }
         
         const PORT = process.env.PORT || 5001;
