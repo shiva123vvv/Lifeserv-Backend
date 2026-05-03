@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+const { sequelize } = require('../config/db');
 
 const Service = sequelize.define('Service', {
     id: {
@@ -9,7 +9,8 @@ const Service = sequelize.define('Service', {
     },
     name: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: false,
+        unique: true
     },
     category: {
         type: DataTypes.STRING,
@@ -41,7 +42,8 @@ const Service = sequelize.define('Service', {
     }
 }, {
     tableName: 'services',
-    timestamps: true
+    timestamps: true,
+    paranoid: true
 });
 
 module.exports = Service;

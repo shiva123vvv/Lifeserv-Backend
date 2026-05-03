@@ -1,63 +1,126 @@
+require('dotenv-flow').config();
 const express = require('express');
-require('dotenv').config();
 const cors = require('cors');
-const { connectDB } = require('./config/db');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const timeout = require('connect-timeout');
+const rateLimit = require('express-rate-limit');
+const xss = require('xss-clean');
+const { testConnection } = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
+const logger = require('./utils/logger');
+
+/**
+ * 🚀 LIFESERV BACKEND - AUDITED STABLE
+ */
 
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 1. SECURITY & LOGGING
+app.use(helmet());
+app.use(cors({ origin: '*', credentials: true }));
+app.use(express.json({ limit: '10kb' }));
+app.use(xss());
+app.use(timeout('15s'));
+app.use((req, res, next) => { if (!req.timedout) next(); });
 
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/providers', require('./routes/providers'));
-app.use('/api/customers', require('./routes/customers'));
-app.use('/api/services', require('./routes/services'));
-app.use('/api/bookings', require('./routes/bookings'));
-app.use('/api/reviews', require('./routes/reviews'));
-app.use('/api/payments', require('./routes/payments'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/jobs', require('./routes/jobs'));
+// Standard Logging (Morgan)
+app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } }));
 
-// Health check
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'OK', 
-        message: 'Lifeserv API is operational',
-        timestamp: new Date().toISOString()
-    });
+// 2. RATE LIMITING
+const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 500 });
+app.use('/api', apiLimiter);
+
+// 3. ROUTES & CACHING CONTROL
+const v1Router = express.Router();
+
+// Middleware: Log and Disable Caching
+v1Router.use((req, res, next) => {
+    logger.info(`[v1Router] ${req.method} ${req.url}`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
 });
 
-// Error handler (must be last)
+// Explicit Routes
+const broadcastRoutes = require('./routes/broadcasts');
+app.use('/api/v1/broadcasts', broadcastRoutes);
+console.log("✅ Broadcast routes mounted at /api/v1/broadcasts");
+
+const userRoutes = require('./routes/users');
+app.use('/api/v1/users', userRoutes);
+console.log("✅ Users routes mounted at /api/v1/users");
+
+// Registry
+v1Router.use('/auth', require('./routes/auth'));
+v1Router.use('/providers', require('./routes/providers'));
+v1Router.use('/customers', require('./routes/customers'));
+v1Router.use('/services', require('./routes/services'));
+v1Router.use('/bookings', require('./routes/bookings'));
+v1Router.use('/reviews', require('./routes/reviews'));
+v1Router.use('/admin', require('./routes/adminRoutes'));
+v1Router.use('/jobs', require('./routes/jobs'));
+v1Router.use('/payments', require('./routes/payments'));
+v1Router.use('/profile', require('./routes/profileRoutes'));
+v1Router.use('/job-requests', require('./routes/jobRequests'));
+
+// Consolidate into v1Router
+v1Router.use('/withdraw', require('./routes/withdrawals'));
+v1Router.get('/user/available-balance', require('./middleware/auth').protect, require('./controllers/withdrawalController').getAvailableBalance);
+v1Router.get('/user/financial-summary', require('./middleware/auth').protect, require('./controllers/withdrawalController').getFinancialSummary);
+
+// Removal of old direct app mounts
+
+app.use('/api/v1', v1Router);
+app.use('/api', v1Router); // Fallback
+
+app.get('/api/v1/health', (req, res) => {
+    res.json({ success: true, status: 'operational' });
+});
+
+// 4. AUTO-DELETE EXPIRED BROADCASTS (Every Hour)
+const { Broadcast } = require('./models');
+const { Op } = require('sequelize');
+setInterval(async () => {
+    try {
+        const count = await Broadcast.destroy({
+            where: {
+                expiresAt: { [Op.lt]: new Date() }
+            }
+        });
+        if (count > 0) logger.info(`[Cleanup] Deleted ${count} expired broadcasts`);
+    } catch (err) {
+        logger.error(`[Cleanup Error] ${err.message}`);
+    }
+}, 3600000); // 1 Hour
+
+// 5. ERROR HANDLING
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 8080;
+// Global 404
+app.use((req, res) => {
+    console.warn(`[GLOBAL 404] ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ success: false, message: "Resource not identified" });
+});
 
-// Start Server Wrapper
-const startServer = async () => {
+// 6. STARTUP
+const start = async () => {
     try {
-        // Essential: Connect to DB before accepting traffic
-        await connectDB();
-
+        logger.info('--- ⚙️ Initialization Sequence ---');
+        require('./config/firebase');
+        await testConnection();
+        const { sequelize } = require('./config/db');
+        await sequelize.sync({ alter: true });
+        const PORT = process.env.PORT || 5001;
         app.listen(PORT, '0.0.0.0', () => {
-            console.log(`🚀 Lifeserv Backend operational on port ${PORT}`);
-            console.log(`📡 Environment: ${process.env.NODE_ENV || 'production'}`);
+            logger.info(`✅ Lifeserv Stable: http://localhost:${PORT}/api/v1`);
         });
-    } catch (error) {
-        console.error('❌ Failed to start server due to DB connection issues:', error.message);
+    } catch (err) {
+        logger.error(`❌ FATAL: ${err.message}`);
         process.exit(1);
     }
 };
 
-startServer();
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-    console.error(`❌ Unhandled Rejection: ${err.message}`);
-    process.exit(1);
-});
-
+start();
 module.exports = app;

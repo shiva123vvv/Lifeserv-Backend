@@ -11,26 +11,40 @@ const protect = asyncHandler(async (req, res, next) => {
     ) {
         try {
             token = req.headers.authorization.split(' ')[1];
+            
+            // 🔍 DEBUG: Log token acquisition (temp)
+            // console.log("AUTH HEADER:", req.headers.authorization);
+
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+            // First check User table
             req.user = await User.findByPk(decoded.id);
+            
+            // If not in User table, check Admin table
+            if (!req.user) {
+                const { Admin } = require('../models');
+                req.user = await Admin.findByPk(decoded.id);
+            }
 
             if (!req.user) {
-                res.status(401);
-                throw new Error('Not authorized, user not found');
+                return res.status(401).json({ success: false, error: 'Identity not recognized' });
             }
 
             next();
         } catch (error) {
-            console.error(error);
-            res.status(401);
-            throw new Error('Not authorized, token failed');
+            console.error("AUTH ERROR:", error.message);
+            return res.status(401).json({
+                success: false,
+                error: "Invalid or expired token",
+            });
         }
     }
 
     if (!token) {
-        res.status(401);
-        throw new Error('Not authorized, no token');
+        return res.status(401).json({
+            success: false,
+            error: "Not authorized, no token",
+        });
     }
 });
 

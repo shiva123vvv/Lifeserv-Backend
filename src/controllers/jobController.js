@@ -2,7 +2,7 @@ const asyncHandler = require('express-async-handler');
 const { JobOffer, User } = require('../models');
 
 // @desc    Create a new job offer
-// @route   POST /api/jobs
+// @route   POST /api/v1/jobs
 // @access  Private (Customer)
 const createJobOffer = asyncHandler(async (req, res) => {
     const { serviceName, title, description, budget, budgetType, location } = req.body;
@@ -22,32 +22,57 @@ const createJobOffer = asyncHandler(async (req, res) => {
         location: location || { address: '', latitude: null, longitude: null }
     });
 
-    res.status(201).json(jobOffer);
+    res.status(201).json({
+        success: true,
+        data: jobOffer
+    });
 });
 
+const { getPagination, getPagingData } = require('../utils/pagination');
+
 // @desc    Get all open job offers
-// @route   GET /api/jobs
+// @route   GET /api/v1/jobs
 // @access  Public
 const getJobOffers = asyncHandler(async (req, res) => {
-    const offers = await JobOffer.findAll({
+    const { page, size } = req.query;
+    const { limit, offset } = getPagination(page, size);
+
+    const data = await JobOffer.findAndCountAll({
         where: { status: 'open' },
+        limit,
+        offset,
         include: [{ model: User, as: 'customer', attributes: ['name', 'photo'] }],
         order: [['createdAt', 'DESC']]
     });
 
-    res.json(offers);
+    const response = getPagingData(data, page, limit);
+
+    res.json({
+        success: true,
+        data: response
+    });
 });
 
 // @desc    Get job offers by customer
-// @route   GET /api/jobs/my
+// @route   GET /api/v1/jobs/my
 // @access  Private (Customer)
 const getMyJobOffers = asyncHandler(async (req, res) => {
-    const offers = await JobOffer.findAll({
+    const { page, size } = req.query;
+    const { limit, offset } = getPagination(page, size);
+
+    const data = await JobOffer.findAndCountAll({
         where: { customerId: req.user.id },
+        limit,
+        offset,
         order: [['createdAt', 'DESC']]
     });
 
-    res.json(offers);
+    const response = getPagingData(data, page, limit);
+
+    res.json({
+        success: true,
+        data: response
+    });
 });
 
 module.exports = {
@@ -55,3 +80,4 @@ module.exports = {
     getJobOffers,
     getMyJobOffers
 };
+

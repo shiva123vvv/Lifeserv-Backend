@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+const { sequelize } = require('../config/db');
 
 const Payment = sequelize.define('Payment', {
     id: {
@@ -7,11 +7,11 @@ const Payment = sequelize.define('Payment', {
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    bookingId: {
+    jobRequestId: {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-            model: 'bookings',
+            model: 'job_requests',
             key: 'id'
         }
     },

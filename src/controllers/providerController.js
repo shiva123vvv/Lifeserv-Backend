@@ -1,15 +1,15 @@
 const asyncHandler = require('express-async-handler');
-const { Provider, User, Service, Booking, Payment } = require('../models');
+const { Provider, User, Service, Booking, Payment, AuditLog, JobRequest } = require('../models');
+const { Op } = require('sequelize');
+const { getPagination, getPagingData } = require('../utils/pagination');
+const cacheService = require('../services/cacheService');
+
+/**
+ * 🛠 PROVIDER CONTROLLER - PRODUCTION SAFE
+ */
 
 // @desc    Get provider profile
-// @route   GET /api/providers/profile
-// @access  Private (Provider)
-// @desc    Get provider profile
-// @route   GET /api/providers/profile
-// @access  Private (Provider)
-// @desc    Get provider profile
-// @route   GET /api/providers/profile
-// @access  Private (Provider)
+// @route   GET /api/v1/providers/profile
 const getProviderProfile = asyncHandler(async (req, res) => {
     const provider = await Provider.findOne({
         where: { userId: req.user.id },
@@ -17,125 +17,205 @@ const getProviderProfile = asyncHandler(async (req, res) => {
     });
 
     if (provider) {
-        res.json(provider);
+        // 🔥 STEP 1: BACKEND DEBUG (MANDATORY)
+        console.log("🔥 RAW PROVIDER SERVICES:", provider.services);
+
+        // 🔥 STEP 2: DYNAMIC ID RECOVERY & NORMALIZATION
+        const allMasterServices = await Service.findAll({ attributes: ['id', 'name'], where: { isApproved: true } });
+        const serviceMap = {};
+        allMasterServices.forEach(s => {
+            serviceMap[s.name.toLowerCase().trim()] = s.id;
+        });
+
+        let services = provider.services;
+        if (!services) services = [];
+        if (typeof services === "string") {
+            try {
+                services = JSON.parse(services);
+            } catch {
+                services = [];
+            }
+        }
+
+        // Standardize structure for matching & Inject IDs if missing
+        services = services.map(s => {
+            const normalizedName = String(s.name || s.serviceName || "").trim().toLowerCase();
+            return {
+                id: s.id || serviceMap[normalizedName], // 🛡️ Recover missing ID from master registry
+                name: normalizedName,
+                experienceYears: s.experienceYears || "",
+                hourlyRate: s.hourlyRate || "",
+                fixedRate: s.fixedRate || ""
+            };
+        });
+
+        // 🔥 STEP 3: VERIFY RESPONSE FORMAT
+        res.json({ 
+            success: true, 
+            data: {
+                ...provider.toJSON(),
+                services // Use normalized array
+            } 
+        });
     } else {
         res.status(404);
         throw new Error('Provider profile not found');
     }
 });
 
-// @desc    Update provider details (services, location, etc)
-// @route   PUT /api/providers/profile
-// @access  Private (Provider)
+// @desc    Update provider details
+// @route   PUT /api/v1/providers/profile
 const updateProviderProfile = asyncHandler(async (req, res) => {
-    const provider = await Provider.findOne({ where: { userId: req.user.id } });
+    try {
+        const userId = req.user.id;
+        const provider = await Provider.findOne({ 
+            where: { userId },
+            include: [{ model: User, as: 'user' }]
+        });
 
-    if (provider) {
-        // Update fields if provided
-        if (req.body.bio) provider.bio = req.body.bio;
-        if (req.body.services) provider.services = req.body.services;
-        if (req.body.availability) provider.availability = req.body.availability;
-        if (req.body.location) provider.location = req.body.location;
-        if (req.body.isVerified !== undefined) provider.isVerified = req.body.isVerified;
+        if (!provider) {
+            return res.status(404).json({ success: false, error: "Provider record missing." });
+        }
+
+        // 1. SAFE UPDATE Linked User (Name)
+        if (req.body.name) {
+            const user = await User.findByPk(userId);
+            if (user) {
+                user.name = req.body.name;
+                await user.save();
+            }
+        }
+
+        // 2. SAFE UPDATE Provider Fields (Except services)
+        const allowedFields = ["bio", "availability", "location", "documents"];
+        
+        allowedFields.forEach(field => {
+            if (req.body[field] !== undefined) {
+                provider[field] = req.body[field];
+            }
+        });
+
+        // 3. SYNC SERVICES WITH MASTER REGISTRY (CORE FIX)
+        if (req.body.services) {
+            const requestedServices = req.body.services;
+            const synchronizedServices = [];
+
+            for (const s of requestedServices) {
+                const normalizedName = String(s.name || "").trim();
+                if (!normalizedName) continue;
+
+                // 🛡️ FIND OR CREATE in master registry
+                let [serviceRecord] = await Service.findOrCreate({
+                    where: { name: normalizedName },
+                    defaults: {
+                        name: normalizedName,
+                        category: "Other", // Default category for new on-the-fly services
+                        isCustom: true,
+                        isApproved: true // Auto-approve for now to keep flow smooth
+                    }
+                });
+
+                synchronizedServices.push({
+                    id: serviceRecord.id,
+                    name: serviceRecord.name,
+                    experienceYears: s.experienceYears || "",
+                    hourlyRate: s.hourlyRate || "",
+                    fixedRate: s.fixedRate || ""
+                });
+            }
+
+            provider.services = synchronizedServices;
+            provider.changed('services', true);
+        }
 
         const updatedProvider = await provider.save();
-        res.json(updatedProvider);
-    } else {
-        res.status(404);
-        throw new Error('Provider profile not found');
+        
+        // Invalidate cache
+        cacheService.invalidatePattern('providers_');
+        
+        res.json({ success: true, data: updatedProvider });
+    } catch (error) {
+        console.error("❌ PROFILE UPDATE ERROR:", error);
+        res.status(500).json({
+            success: false,
+            error: "System failure during profile preservation."
+        });
     }
 });
 
-const { Op } = require('sequelize');
-
-// @desc    Get all providers (Public w/ filters)
-// @route   GET /api/providers
-// @access  Public
+// @desc    Get all providers (Public w/ filters & pagination)
+// @route   GET /api/v1/providers
 const getProviders = asyncHandler(async (req, res) => {
     const { 
-        category, 
-        minPrice, 
-        maxPrice, 
-        rating, 
-        location, 
-        sort,
-        availability 
+        category, rating, page, size 
     } = req.query;
+
+    console.log(`[ProviderAPI] Discovery HIT - Category: ${category || 'all'}`);
 
     const queryOptions = {
         where: {},
-        include: [{ 
-            model: User, 
-            as: 'user', 
-            attributes: ['name', 'photo'] 
-        }],
-        order: []
+        include: [{ model: User, as: 'user', attributes: ['name', 'photo', 'phone'] }],
+        order: [['rating', 'DESC']]
     };
 
-    if (rating) {
-        queryOptions.where.rating = { [Op.gte]: parseFloat(rating) };
-    }
+    if (rating) queryOptions.where.rating = { [Op.gte]: parseFloat(rating) };
 
-    if (availability === 'true') {
-        queryOptions.where.isVerified = true;
-    }
+    const allProviders = await Provider.findAll(queryOptions);
 
-    // Sorting
-    if (sort) {
-        switch (sort) {
-            case 'price_low':
-                queryOptions.order.push([sequelize.json('services[0].startingPrice'), 'ASC']);
-                break;
-            case 'price_high':
-                queryOptions.order.push([sequelize.json('services[0].startingPrice'), 'DESC']);
-                break;
-            case 'top_rated':
-                queryOptions.order.push(['rating', 'DESC']);
-                break;
-            case 'newest':
-                queryOptions.order.push(['createdAt', 'DESC']);
-                break;
+    // 🔥 FETCH MASTER REGISTRY FOR DYNAMIC ID ATTACHMENT
+    const allMasterServices = await Service.findAll({ attributes: ['id', 'name'], where: { isApproved: true } });
+    const serviceMap = {};
+    allMasterServices.forEach(s => {
+        serviceMap[s.name.toLowerCase().trim()] = s.id;
+    });
+    
+    // 🔥 FORCE NORMALIZATION (Safe filtering & ID recovery)
+    let filtered = allProviders.map(p => {
+        const raw = p.toJSON();
+        let services = raw.services;
+        
+        // Ensure services is always a valid array
+        if (!services) services = [];
+        if (typeof services === 'string') {
+            try { services = JSON.parse(services); } catch { services = []; }
         }
-    }
+        if (!Array.isArray(services)) services = [];
 
-    const providers = await Provider.findAll(queryOptions);
+        // 🛡️ Inject missing IDs on the fly
+        const normalized = services.map(s => ({
+            ...s,
+            id: s.id || serviceMap[String(s.name || "").toLowerCase().trim()]
+        }));
 
-    let enrichedProviders = providers.map(p => p.toJSON());
+        return { ...raw, services: normalized };
+    });
 
-    // In-memory filters for nested JSONB data structure (onboarding-specific)
+    console.log(`[ProviderAPI] Real providers in DB: ${filtered.length}`);
+
     if (category) {
-        enrichedProviders = enrichedProviders.filter(p => 
-            p.services.some(s => s.name?.toLowerCase() === category.toLowerCase())
+        filtered = filtered.filter(p => 
+            p.services.some(s => 
+                String(s.name || s.serviceName || "").toLowerCase().includes(category.toLowerCase())
+            )
         );
+        console.log(`[ProviderAPI] Filtered by category (${category}): ${filtered.length}`);
     }
 
-    if (maxPrice) {
-        enrichedProviders = enrichedProviders.filter(p => 
-            p.services.some(s => parseFloat(s.startingPrice) <= parseFloat(maxPrice))
-        );
-    }
+    const { limit, offset } = getPagination(page, size);
+    const paginatedItems = filtered.slice(offset, offset + limit);
+    
+    const response = {
+        totalItems: filtered.length,
+        items: paginatedItems,
+        totalPages: Math.ceil(filtered.length / (limit || 10)),
+        currentPage: page ? +page : 1
+    };
 
-    if (minPrice) {
-        enrichedProviders = enrichedProviders.filter(p => 
-            p.services.some(s => parseFloat(s.startingPrice) >= parseFloat(minPrice))
-        );
-    }
-
-    if (location) {
-        enrichedProviders = enrichedProviders.filter(p => 
-            p.location?.city?.toLowerCase().includes(location.toLowerCase()) ||
-            p.location?.address?.toLowerCase().includes(location.toLowerCase())
-        );
-    }
-
-    res.json(enrichedProviders);
+    res.json({ success: true, data: response });
 });
 
-// ... existing code ...
-
-// @desc    Update job status (Accept/Reject/Complete)
-// @route   PUT /api/providers/jobs/:id/:action
-// @access  Private (Provider)
+// @desc    Update job status
+// @route   PUT /api/v1/providers/jobs/:id/:action
 const updateJobStatus = asyncHandler(async (req, res) => {
     const { id, action } = req.params;
     const booking = await Booking.findByPk(id);
@@ -145,27 +225,17 @@ const updateJobStatus = asyncHandler(async (req, res) => {
         throw new Error('Booking not found');
     }
 
-    // Verify ownership
-    // Ideally check if booking.providerId matches current user's provider profile
-
-
-
     let newStatus;
     switch (action) {
-        case 'accept':
-            newStatus = 'accepted';
-            break;
-        case 'reject':
-            newStatus = 'cancelled';
-            break;
+        case 'accept': newStatus = 'accepted'; break;
+        case 'reject': newStatus = 'cancelled'; break;
         case 'complete':
             newStatus = 'completed';
-            // Create payment record
             await Payment.create({
                 bookingId: booking.id,
                 amount: booking.price,
                 currency: 'INR',
-                paymentMethod: 'cash', // Defaulting to cash for now
+                paymentMethod: 'cash',
                 status: 'completed'
             });
             break;
@@ -177,45 +247,81 @@ const updateJobStatus = asyncHandler(async (req, res) => {
     booking.status = newStatus;
     await booking.save();
 
-    res.json(booking);
+    await AuditLog.create({
+        userId: req.user.id,
+        action: `job_${action}`,
+        entity: 'Booking',
+        entityId: booking.id,
+        metadata: { status: newStatus }
+    });
+
+    res.json({ success: true, data: booking });
 });
 
-// @desc    Get provider earnings stats
-// @route   GET /api/providers/earnings
-// @access  Private (Provider)
+// @desc    Get earnings
 const getProviderEarnings = asyncHandler(async (req, res) => {
     const provider = await Provider.findOne({ where: { userId: req.user.id } });
-    if (!provider) {
-        res.json({ totalJobs: 0, activeJobs: 0, totalEarnings: 0, rating: 0 });
-        return;
-    }
+    if (!provider) return res.json({ success: true, data: { totalJobs: 0, activeJobs: 0, totalEarnings: 0, rating: 0 } });
 
-    const bookings = await Booking.findAll({ where: { providerId: provider.id } });
+    // Fetch all job requests for this provider
+    const jobRequests = await JobRequest.findAll({ where: { providerId: provider.id } });
 
-    const totalJobs = bookings.length;
-    const activeJobs = bookings.filter(b => ['pending', 'accepted', 'ongoing'].includes(b.status)).length;
-    const completedJobs = bookings.filter(b => b.status === 'completed');
-    const totalEarnings = completedJobs.reduce((acc, curr) => acc + (parseFloat(curr.price) || 0), 0);
+    const totalJobs = jobRequests.filter(j => j.paymentStatus === 'paid').length;
+    const activeJobs = jobRequests.filter(j => j.paymentStatus === 'paid' && j.status === 'ongoing').length;
+    
+    // 🔥 PURE CALCULATION: Sum only the base 'price' field, explicitly ignoring service fees
+    const totalEarnings = jobRequests
+        .filter(j => j.paymentStatus === 'paid')
+        .reduce((acc, curr) => {
+            const base = parseFloat(curr.price) || 0;
+            const fee = parseFloat(curr.serviceFee) || 0;
+            const total = parseFloat(curr.totalAmount) || 0;
+            
+            console.log(`🧾 [EarningsAudit] Job: ${curr.id} | Base: ₹${base} | Fee: ₹${fee} | Total: ₹${total}`);
+            return acc + base;
+        }, 0);
+
+    const roundedEarnings = Math.round(totalEarnings * 100) / 100;
+    console.log(`💰 [ProviderEarnings] ID: ${provider.id} | Final Calculated Net: ₹${roundedEarnings}`);
 
     res.json({
-        totalJobs,
-        activeJobs,
-        totalEarnings,
-        rating: provider.rating || 0
+        success: true,
+        data: { totalJobs, activeJobs, totalEarnings: roundedEarnings, rating: provider.rating || 0 }
     });
 });
 
-
-// @desc    Get provider by ID (Public)
-// @route   GET /api/providers/:id
-// @access  Public
+// @desc    Get by ID
 const getProviderById = asyncHandler(async (req, res) => {
     const provider = await Provider.findByPk(req.params.id, {
         include: [{ model: User, as: 'user', attributes: ['name', 'photo', 'phone'] }]
     });
 
     if (provider) {
-        res.json(provider);
+        // 🔥 DYNAMIC SERVICE NORMALIZATION
+        let services = provider.services || [];
+        if (typeof services === 'string') {
+            try { services = JSON.parse(services); } catch { services = []; }
+        }
+
+        // Recover IDs from registry
+        const allMasterServices = await Service.findAll({ attributes: ['id', 'name'], where: { isApproved: true } });
+        const serviceMap = {};
+        allMasterServices.forEach(s => {
+            serviceMap[s.name.toLowerCase().trim()] = s.id;
+        });
+
+        const normalizedServices = services.map(s => ({
+            ...s,
+            id: s.id || serviceMap[String(s.name || "").toLowerCase().trim()]
+        }));
+
+        res.json({ 
+            success: true, 
+            data: { 
+                ...provider.toJSON(), 
+                services: normalizedServices 
+            } 
+        });
     } else {
         res.status(404);
         throw new Error('Provider not found');

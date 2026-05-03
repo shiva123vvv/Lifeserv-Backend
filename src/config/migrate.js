@@ -1,23 +1,26 @@
-const { sequelize } = require('./database');
-const { User, Provider, Service, Booking, Review, Payment } = require('../models');
+const { sequelize } = require('./db');
+const { User, Provider, Service, Booking, Review, Payment, JobOffer } = require('../models');
 
+/**
+ * 🛠 DATABASE MIGRATION SCRIPT
+ * Synchronizes models with Railway PostgreSQL schema.
+ */
 const syncDatabase = async () => {
     try {
+        console.log('📡 Initiating database synchronization...');
         await sequelize.authenticate();
-        console.log('✅ Connected to database');
+        console.log('✅ Connection established.');
 
-        // Force sync will drop tables and recreate them (USE WITH CAUTION)
-        // await sequelize.sync({ force: true });
-
-        // Alter sync will update tables to match models
+        // Alter mode: Updates existing tables without dropping them
         await sequelize.sync({ alter: true });
 
-        console.log('✅ Database synced successfully');
+        console.log('✅ Railway schema successfully synchronized.');
         process.exit(0);
     } catch (error) {
-        console.error('❌ Database sync failed:', error);
+        console.error('❌ MIGRATION ERROR:', error.message);
         process.exit(1);
     }
 };
 
 syncDatabase();
+

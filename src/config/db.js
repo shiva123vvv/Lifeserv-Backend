@@ -1,57 +1,49 @@
+require('dotenv-flow').config();
 const { Sequelize } = require('sequelize');
-require('dotenv').config();
+const logger = require('../utils/logger');
 
-// 1. Extract and Clean DATABASE_URL
-// Neon URLs often include channel_binding=require which some drivers/environments (like Railway) find problematic.
-// We normalize it to only use sslmode=require.
-const rawUrl = process.env.DATABASE_URL;
+const dbUrl = process.env.DATABASE_URL;
 
-if (!rawUrl) {
-    console.error('❌ CRITICAL ERROR: DATABASE_URL is not defined in environment variables.');
+if (!dbUrl) {
+    logger.error('❌ DATABASE_URL missing');
     process.exit(1);
 }
 
-// Remove problematic query parameters like channel_binding
-const cleanUrl = rawUrl.split('?')[0] + '?sslmode=require';
-
-console.log('🔗 Database connection initialized via Environment Variable.');
-
-const sequelize = new Sequelize(cleanUrl, {
+/**
+ * 🌐 SCALABLE POSTGRESQL CONFIGURATION
+ * Optimized for high-load Railway environments.
+ */
+const sequelize = new Sequelize(dbUrl, {
     dialect: 'postgres',
-    protocol: 'postgres',
-    logging: false, // Production-ready: disable query logging
+    logging: (msg) => logger.info(`[DB] ${msg}`), // Log queries in dev
     dialectOptions: {
         ssl: {
             require: true,
-            rejectUnauthorized: false // Required for Neon DB compatibility
-        }
+            rejectUnauthorized: false,
+        },
     },
+    /**
+     * Optimized Pooling for Scalability
+     */
     pool: {
-        max: 5,
+        max: 10,
         min: 0,
         acquire: 30000,
-        idle: 10000
+        idle: 10000,
+        evict: 10000,
     }
 });
 
-const connectDB = async () => {
+async function testConnection() {
     try {
+        logger.info('📡 Initializing database connection pool...');
         await sequelize.authenticate();
-        console.log('✅ PostgreSQL connected successfully to Neon/Railway');
-
-        // Note: Manual syncing is usually avoided in production-ready apps 
-        // using migrations, but we'll keep it for development speed if needed.
-        if (process.env.NODE_ENV === 'development') {
-            await sequelize.sync({ alter: true });
-            console.log('📊 Database models synchronized');
-        }
-    } catch (error) {
-        console.error('❌ DB Connection Error:', error.message);
-        if (error.parent) {
-            console.error('🔍 Detail:', error.parent.message);
-        }
-        process.exit(1); // Exit process if DB fails as per requirements
+        logger.info('✅ Database pool established successfully');
+        return true;
+    } catch (err) {
+        logger.error(`❌ Database pool initialization failed: ${err.message}`);
+        return false;
     }
-};
+}
 
-module.exports = { sequelize, connectDB };
+module.exports = { sequelize, testConnection };

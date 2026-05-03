@@ -2,7 +2,7 @@ const asyncHandler = require('express-async-handler');
 const { User, Booking } = require('../models');
 
 // @desc    Get customer profile
-// @route   GET /api/customers/profile
+// @route   GET /api/v1/customers/profile
 // @access  Private (Customer)
 const getCustomerProfile = asyncHandler(async (req, res) => {
     const user = await User.findByPk(req.user.id, {
@@ -10,7 +10,7 @@ const getCustomerProfile = asyncHandler(async (req, res) => {
     });
 
     if (user) {
-        res.json(user);
+        res.json({ success: true, data: user });
     } else {
         res.status(404);
         throw new Error('User not found');
@@ -18,7 +18,7 @@ const getCustomerProfile = asyncHandler(async (req, res) => {
 });
 
 // @desc    Update customer profile
-// @route   PUT /api/customers/profile
+// @route   PUT /api/v1/customers/profile
 // @access  Private (Customer)
 const updateCustomerProfile = asyncHandler(async (req, res) => {
     const user = await User.findByPk(req.user.id);
@@ -27,21 +27,20 @@ const updateCustomerProfile = asyncHandler(async (req, res) => {
         user.name = req.body.name || user.name;
         user.email = req.body.email || user.email;
         user.phone = req.body.phone || user.phone;
-        user.address = req.body.address || user.address; // Assuming address field exists in User model
-
-        if (req.body.password) {
-            user.password = req.body.password;
-        }
+        user.address = req.body.address || user.address;
 
         const updatedUser = await user.save();
 
         res.json({
-            id: updatedUser.id,
-            name: updatedUser.name,
-            email: updatedUser.email,
-            phone: updatedUser.phone,
-            role: updatedUser.role,
-            address: updatedUser.address
+            success: true,
+            data: {
+                id: updatedUser.id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                phone: updatedUser.phone,
+                role: updatedUser.role,
+                address: updatedUser.address
+            }
         });
     } else {
         res.status(404);
@@ -50,3 +49,4 @@ const updateCustomerProfile = asyncHandler(async (req, res) => {
 });
 
 module.exports = { getCustomerProfile, updateCustomerProfile };
+

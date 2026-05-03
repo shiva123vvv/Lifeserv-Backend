@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+const { sequelize } = require('../config/db');
 
 const Booking = sequelize.define('Booking', {
     id: {
@@ -81,7 +81,14 @@ const Booking = sequelize.define('Booking', {
     }
 }, {
     tableName: 'bookings',
-    timestamps: true
+    timestamps: true,
+    paranoid: true,
+    indexes: [
+        { fields: ['customerId'] },
+        { fields: ['providerId'] },
+        { fields: ['status'] },
+        { fields: ['createdAt'] }
+    ]
 });
 
 module.exports = Booking;

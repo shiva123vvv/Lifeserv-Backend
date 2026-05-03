@@ -2,7 +2,7 @@ const asyncHandler = require('express-async-handler');
 const { Review, Booking, Provider, User } = require('../models');
 
 // @desc    Create a review for a booking
-// @route   POST /api/reviews
+// @route   POST /api/v1/reviews
 // @access  Private (Customer)
 const createReview = asyncHandler(async (req, res) => {
     const { bookingId, rating, review, photos } = req.body;
@@ -14,19 +14,16 @@ const createReview = asyncHandler(async (req, res) => {
         throw new Error('Booking not found');
     }
 
-    // Check if the booking is completed
     if (booking.status !== 'completed') {
         res.status(400);
         throw new Error('You can only review completed services');
     }
 
-    // Check if user is the customer who made the booking
     if (booking.customerId !== req.user.id) {
         res.status(401);
         throw new Error('You are not authorized to review this booking');
     }
 
-    // Check if review already exists
     const existingReview = await Review.findOne({ where: { bookingId } });
     if (existingReview) {
         res.status(400);
@@ -51,11 +48,14 @@ const createReview = asyncHandler(async (req, res) => {
         await provider.save();
     }
 
-    res.status(201).json(newReview);
+    res.status(201).json({
+        success: true,
+        data: newReview
+    });
 });
 
 // @desc    Get all reviews for a provider
-// @route   GET /api/reviews/provider/:providerId
+// @route   GET /api/v1/reviews/provider/:providerId
 // @access  Public
 const getProviderReviews = asyncHandler(async (req, res) => {
     const reviews = await Review.findAll({
@@ -70,11 +70,14 @@ const getProviderReviews = asyncHandler(async (req, res) => {
         order: [['createdAt', 'DESC']]
     });
 
-    res.json(reviews);
+    res.json({
+        success: true,
+        data: reviews
+    });
 });
 
 // @desc    Get a review by booking ID
-// @route   GET /api/reviews/booking/:bookingId
+// @route   GET /api/v1/reviews/booking/:bookingId
 // @access  Public
 const getReviewByBooking = asyncHandler(async (req, res) => {
     const review = await Review.findOne({
@@ -89,7 +92,10 @@ const getReviewByBooking = asyncHandler(async (req, res) => {
     });
 
     if (review) {
-        res.json(review);
+        res.json({
+            success: true,
+            data: review
+        });
     } else {
         res.status(404);
         throw new Error('Review not found');
@@ -101,3 +107,4 @@ module.exports = {
     getProviderReviews,
     getReviewByBooking
 };
+

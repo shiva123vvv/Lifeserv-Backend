@@ -1,15 +1,36 @@
 const asyncHandler = require('express-async-handler');
 const { Service, Provider, User, sequelize } = require('../models');
+const { getPagination, getPagingData } = require('../utils/pagination');
+const cacheService = require('../services/cacheService');
 
 // @desc    Get all services
-// @route   GET /api/services
+// @route   GET /api/v1/services
 // @access  Public
 const getServices = asyncHandler(async (req, res) => {
-    const services = await Service.findAll({
+    const { page, size } = req.query;
+    const cacheKey = `services_p${page || 1}_s${size || 10}`;
+
+    const cached = cacheService.get(cacheKey);
+    if (cached) {
+        return res.json({ success: true, data: cached });
+    }
+
+    const { limit, offset } = getPagination(page, size);
+
+    const data = await Service.findAndCountAll({
         where: { isApproved: true },
+        limit,
+        offset,
         order: [['name', 'ASC']]
     });
-    res.json(services);
+
+    const response = getPagingData(data, page, limit);
+    cacheService.set(cacheKey, response);
+
+    res.json({
+        success: true,
+        data: response
+    });
 });
 
 // @desc    Create a service
@@ -31,6 +52,10 @@ const createService = asyncHandler(async (req, res) => {
         createdBy: req.user.role === 'provider' ? req.user.id : null
     });
 
+    // Invalidate Cache
+    cacheService.invalidatePattern('services_');
+    cacheService.del('service_categories');
+
     // Populate creator if exists
     const populatedService = await Service.findByPk(service.id, {
         include: [{
@@ -40,18 +65,23 @@ const createService = asyncHandler(async (req, res) => {
         }]
     });
 
-    res.status(201).json(populatedService);
+    res.status(201).json({
+        success: true,
+        data: populatedService
+    });
 });
 
 // @desc    Delete a service (Admin)
-// @route   DELETE /api/services/:id
+// @route   DELETE /api/v1/services/:id
 // @access  Private/Admin
 const deleteService = asyncHandler(async (req, res) => {
     const service = await Service.findByPk(req.params.id);
 
     if (service) {
         await service.destroy();
-        res.json({ message: 'Service removed' });
+        cacheService.invalidatePattern('services_');
+        cacheService.del('service_categories');
+        res.json({ success: true, message: 'Service removed' });
     } else {
         res.status(404);
         throw new Error('Service not found');
@@ -59,9 +89,15 @@ const deleteService = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get unique normalized categories
-// @route   GET /api/services/categories
+// @route   GET /api/v1/services/categories
 // @access  Public
 const getCategories = asyncHandler(async (req, res) => {
+    const cacheKey = 'service_categories';
+    const cached = cacheService.get(cacheKey);
+    if (cached) {
+        return res.json({ success: true, data: cached });
+    }
+
     const services = await Service.findAll({
         attributes: [
             [sequelize.fn('DISTINCT', sequelize.col('category')), 'category']
@@ -71,23 +107,23 @@ const getCategories = asyncHandler(async (req, res) => {
 
     let categories = services.map(s => {
         let cat = s.category || 'General';
-        // Normalize: " design" -> "Design"
         cat = cat.trim();
         cat = cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
         return cat;
     });
 
-    // Final unique set after normalization
     let uniqueCats = Array.from(new Set(categories)).filter(c => c).sort();
 
-    // Fallback logic for UX stability
     if (uniqueCats.length === 0) {
-        console.log('[ServiceController] No categories found in DB, using fallback defaults');
         uniqueCats = ['Cleaning', 'Plumbing', 'Electrical', 'Repairs', 'Maintenance', 'Business', 'Design', 'Development'];
     }
 
-    console.log('[ServiceController] Returning categories:', uniqueCats.length);
-    res.json(uniqueCats);
+    cacheService.set(cacheKey, uniqueCats, 3600); // Cache for 1 hour
+
+    res.json({
+        success: true,
+        data: uniqueCats
+    });
 });
 
 module.exports = { getServices, createService, deleteService, getCategories };

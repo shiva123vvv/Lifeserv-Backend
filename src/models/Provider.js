@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+const { sequelize } = require('../config/db');
 
 const Provider = sequelize.define('Provider', {
     id: {
@@ -26,6 +26,16 @@ const Provider = sequelize.define('Provider', {
         defaultValue: [],
         comment: 'Array of {name, experienceYears, hourlyRate, fixedRate}'
     },
+    professionalIdentity: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Professional title or headline'
+    },
+    credentials: {
+        type: DataTypes.JSONB,
+        defaultValue: [],
+        comment: 'Array of certifications or professional achievements'
+    },
     documents: {
         type: DataTypes.JSONB,
         defaultValue: [],
@@ -42,11 +52,10 @@ const Provider = sequelize.define('Provider', {
     location: {
         type: DataTypes.JSONB,
         defaultValue: {
-            address: '',
             city: '',
             state: '',
-            latitude: null,
-            longitude: null
+            pincode: '',
+            addressLine: ''
         }
     },
     rating: {
@@ -75,7 +84,12 @@ const Provider = sequelize.define('Provider', {
     }
 }, {
     tableName: 'providers',
-    timestamps: true
+    timestamps: true,
+    paranoid: true,
+    indexes: [
+        { fields: ['userId'] },
+        { fields: ['verificationStatus'] }
+    ]
 });
 
 module.exports = Provider;

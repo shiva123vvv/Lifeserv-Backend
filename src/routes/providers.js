@@ -12,7 +12,9 @@ const { protect, authorize } = require('../middleware/auth');
 
 router.get('/', getProviders);
 router.get('/profile', protect, authorize('provider'), getProviderProfile);
-router.put('/profile', protect, authorize('provider'), updateProviderProfile);
+const { validate } = require('../middleware/validate');
+
+router.put('/profile', protect, authorize('provider'), validate('updateProfile'), updateProviderProfile);
 router.get('/earnings', protect, authorize('provider'), getProviderEarnings);
 router.put('/jobs/:id/:action', protect, authorize('provider'), updateJobStatus);
 router.get('/:id', getProviderById);

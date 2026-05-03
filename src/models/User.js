@@ -1,6 +1,6 @@
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
-const { sequelize } = require('../config/database');
+const { sequelize } = require('../config/db');
 
 const User = sequelize.define('User', {
     id: {
@@ -14,7 +14,7 @@ const User = sequelize.define('User', {
     },
     email: {
         type: DataTypes.STRING,
-        allowNull: true,
+        allowNull: false,
         unique: true,
         validate: {
             isEmail: true
@@ -22,7 +22,12 @@ const User = sequelize.define('User', {
     },
     phone: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
+        unique: false
+    },
+    firebaseUid: {
+        type: DataTypes.STRING,
+        allowNull: true,
         unique: true
     },
     password: {
@@ -38,7 +43,7 @@ const User = sequelize.define('User', {
         allowNull: true
     },
     address: {
-        type: DataTypes.TEXT,
+        type: DataTypes.JSONB,
         allowNull: true
     },
     isVerified: {
@@ -56,10 +61,24 @@ const User = sequelize.define('User', {
     resetPasswordExpire: {
         type: DataTypes.DATE,
         allowNull: true
+    },
+    onboardingComplete: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    balance: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0.00
     }
 }, {
     tableName: 'users',
     timestamps: true,
+    paranoid: true,
+    indexes: [
+        { fields: ['email'] },
+        { fields: ['firebaseUid'] },
+        { fields: ['role'] }
+    ],
     hooks: {
         beforeCreate: async (user) => {
             if (user.password) {

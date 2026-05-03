@@ -2,11 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { User, Provider, Booking, Service } = require('../models');
 const { protect, authorize } = require('../middleware/auth');
-const { sequelize } = require('../config/database');
+const { sequelize } = require('../config/db');
 
 // Protect all admin routes
-// router.use(protect);
-// router.use(authorize('admin'));
+router.use(protect);
+router.use(authorize('admin'));
 
 // @desc    Get dashboard stats
 // @route   GET /api/admin/dashboard
