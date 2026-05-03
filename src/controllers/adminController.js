@@ -13,68 +13,65 @@ const { Op } = require('sequelize');
 const adminLogin = async (req, res) => {
     try {
         const { email, password } = req.body;
-        console.log(`📥 Login attempt for: ${email}`);
+        console.log("🔐 Admin Login Attempt:", email);
 
-        // 1. Find admin
+        // 1. Validate input
+        if (!email || !password) {
+            return res.status(400).json({ success: false, message: "Email and password required" });
+        }
+
+        // 2. Find admin
         const admin = await Admin.findOne({ where: { email } });
-        
-        // Debug Log
-        if (admin) {
-            console.log("✅ Admin found in database:", admin.email);
-        } else {
-            console.warn("⚠️ Admin not found for email:", email);
-            return res.status(401).json({ success: false, message: "Invalid email or password" });
+
+        if (!admin) {
+            console.log("❌ Admin not found");
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
 
-        // 2. Safe Password Comparison with Fallback
+        // 3. Safe password check (handles BOTH hashed + plain)
         let isMatch = false;
-        
-        if (!admin.password) {
-            console.error(`❌ Admin password missing in DB for: ${email}`);
-            return res.status(500).json({ success: false, message: "Server data inconsistency" });
-        }
 
-        // Check if it's a bcrypt hash (starts with $2)
-        if (admin.password.startsWith("$2")) {
+        if (admin.password && admin.password.startsWith("$2")) {
+            // bcrypt hashed password
             isMatch = await bcrypt.compare(password, admin.password);
         } else {
-            // Temporary plain text fallback for initial setup
+            // plain password fallback (temporary support)
             console.warn(`🔒 [SECURITY WARNING] Using plain-text fallback for admin: ${email}`);
-            isMatch = (password === admin.password);
+            isMatch = password === admin.password;
         }
 
         if (!isMatch) {
-            console.warn(`❌ Password mismatch for: ${email}`);
-            return res.status(401).json({ success: false, message: "Invalid email or password" });
+            console.log("❌ Password mismatch");
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
 
-        // 3. Check JWT_SECRET
+        // 4. Check JWT_SECRET
         if (!process.env.JWT_SECRET) {
-            console.error("❌ JWT_SECRET missing from environment");
+            console.error("🚨 CRITICAL: JWT_SECRET is missing");
             return res.status(500).json({ success: false, message: "Server configuration error" });
         }
 
-        // 4. Generate token
+        // 5. Generate token
         const token = jwt.sign(
-            { id: admin.id, role: admin.role || 'admin' },
+            { id: admin.id, role: "admin" },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
         );
 
-        console.log(`🚀 Admin authenticated successfully: ${email}`);
-        
+        console.log("✅ Admin login success");
+
         return res.status(200).json({
             success: true,
+            message: "Login successful",
             token,
             admin: {
                 id: admin.id,
                 email: admin.email,
-                role: admin.role
-            }
+            },
         });
 
     } catch (error) {
-        console.error("❌ CRITICAL: Admin login error:", error);
+        console.error("🔥 ADMIN LOGIN CRASH:", error);
         return res.status(500).json({
             success: false,
             message: "Internal server error",
