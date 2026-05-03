@@ -12,70 +12,86 @@ const { Op } = require('sequelize');
 // @route   POST /api/v1/admin/login
 const adminLogin = async (req, res) => {
     try {
-        const { email, password } = req.body;
-        console.log("🔐 Admin Login Attempt:", email);
+        console.log("🔥 LOGIN HIT");
+        console.log("📥 BODY:", req.body);
 
-        // 1. Validate input
+        const { email, password } = req.body;
+
         if (!email || !password) {
+            console.log("❌ Missing fields");
             return res.status(400).json({ success: false, message: "Email and password required" });
         }
 
-        // 2. Find admin
         const admin = await Admin.findOne({ where: { email } });
 
+        console.log("👤 Admin Query Result:", admin ? "FOUND" : "NOT FOUND");
+        if (admin) {
+            console.log("👤 Admin Data:", { id: admin.id, email: admin.email, hasPassword: !!admin.password });
+        }
+
         if (!admin) {
-            console.log("❌ Admin not found");
+            console.log("❌ Admin not found in database");
             return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
 
-        // 3. Safe password check (handles BOTH hashed + plain)
+        if (!admin.password) {
+            console.log("❌ Admin password field is NULL or EMPTY in DB");
+            return res.status(500).json({ success: false, message: "Admin password corrupted" });
+        }
+
         let isMatch = false;
 
-        if (admin.password && admin.password.startsWith("$2")) {
-            // bcrypt hashed password
-            isMatch = await bcrypt.compare(password, admin.password);
-        } else {
-            // plain password fallback (temporary support)
-            console.warn(`🔒 [SECURITY WARNING] Using plain-text fallback for admin: ${email}`);
-            isMatch = password === admin.password;
+        try {
+            console.log("🔐 Starting password comparison...");
+            if (admin.password.startsWith("$2")) {
+                console.log("🔎 Detected bcrypt hash, comparing...");
+                isMatch = await bcrypt.compare(password, admin.password);
+            } else {
+                console.log("🔎 Detected plain-text password, comparing...");
+                isMatch = password === admin.password;
+            }
+        } catch (err) {
+            console.log("❌ Password comparison error:", err.message);
+            return res.status(500).json({ success: false, message: "Password comparison failed", error: err.message });
         }
 
+        console.log("🔐 Password match result:", isMatch);
+
         if (!isMatch) {
-            console.log("❌ Password mismatch");
+            console.log("❌ Password mismatch for admin");
             return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
 
-        // 4. Check JWT_SECRET
         if (!process.env.JWT_SECRET) {
-            console.error("🚨 CRITICAL: JWT_SECRET is missing");
-            return res.status(500).json({ success: false, message: "Server configuration error" });
+            console.log("❌ CRITICAL: JWT_SECRET missing in process.env");
+            return res.status(500).json({ success: false, message: "JWT not configured" });
         }
 
-        // 5. Generate token
+        console.log("🎫 Generating JWT...");
         const token = jwt.sign(
             { id: admin.id, role: "admin" },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
         );
 
-        console.log("✅ Admin login success");
+        console.log("✅ LOGIN SUCCESS");
 
         return res.status(200).json({
             success: true,
-            message: "Login successful",
             token,
             admin: {
                 id: admin.id,
-                email: admin.email,
-            },
+                email: admin.email
+            }
         });
 
     } catch (error) {
-        console.error("🔥 ADMIN LOGIN CRASH:", error);
+        console.log("🔥 FINAL CRASH IN adminLogin:", error);
         return res.status(500).json({
             success: false,
             message: "Internal server error",
-            error: error.message
+            error: error.message,
+            stack: error.stack
         });
     }
 };
