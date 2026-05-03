@@ -1,22 +1,33 @@
+# Node modules
 node_modules/
-.env*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Firebase credentials
 firebase-service-account.json
-scratch/
+
+# Logs
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
+
+# OS files
 .DS_Store
-dist
-dist-ssr
-coverage
-.vscode
-.idea
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-yarn.lock
+Thumbs.db
+
+# Build / temp
+dist/
+build/
+.cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Scratch/Temporary
+scratch/

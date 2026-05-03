@@ -108,16 +108,35 @@ app.use((req, res) => {
 const start = async () => {
     try {
         logger.info('--- ⚙️ Initialization Sequence ---');
+        
+        // Environment Safety Audit
+        console.log("ENV AUDIT:", {
+            DATABASE_URL: !!process.env.DATABASE_URL,
+            FIREBASE_PROJECT_ID: !!process.env.FIREBASE_PROJECT_ID,
+            FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
+            JWT_SECRET: !!process.env.JWT_SECRET
+        });
+
+        if (!process.env.JWT_SECRET) {
+            logger.error("❌ JWT_SECRET missing from environment");
+            process.exit(1);
+        }
+
         require('./config/firebase');
         await testConnection();
         const { sequelize } = require('./config/db');
-        await sequelize.sync({ alter: true });
+        
+        // Sync models only in development
+        if (process.env.NODE_ENV === 'development') {
+            await sequelize.sync({ alter: true });
+        }
+        
         const PORT = process.env.PORT || 5001;
         app.listen(PORT, '0.0.0.0', () => {
-            logger.info(`✅ Lifeserv Stable: http://localhost:${PORT}/api/v1`);
+            logger.info(`✅ Lifeserv Production Ready: Port ${PORT}`);
         });
     } catch (err) {
-        logger.error(`❌ FATAL: ${err.message}`);
+        logger.error(`❌ FATAL CRASH: ${err.message}`);
         process.exit(1);
     }
 };
