@@ -3,6 +3,7 @@ const { Provider, User, Service, Booking, Payment, AuditLog, JobRequest } = requ
 const { Op } = require('sequelize');
 const { getPagination, getPagingData } = require('../utils/pagination');
 const cacheService = require('../services/cacheService');
+const jwt = require('jsonwebtoken');
 
 /**
  * 🛠 PROVIDER CONTROLLER - PRODUCTION SAFE
@@ -152,6 +153,18 @@ const getProviders = asyncHandler(async (req, res) => {
 
     console.log(`[ProviderAPI] Discovery HIT - Category: ${category || 'all'}`);
 
+    // Decode current user optionally if logged in to exclude them from results
+    let currentUserId = null;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        try {
+            const token = req.headers.authorization.split(' ')[1];
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            currentUserId = decoded.id;
+        } catch (e) {
+            // Ignore optional auth decoding errors
+        }
+    }
+
     const queryOptions = {
         where: {},
         include: [{ model: User, as: 'user', attributes: ['name', 'photo', 'phone'] }],
@@ -159,6 +172,7 @@ const getProviders = asyncHandler(async (req, res) => {
     };
 
     if (rating) queryOptions.where.rating = { [Op.gte]: parseFloat(rating) };
+    if (currentUserId) queryOptions.where.userId = { [Op.ne]: currentUserId };
 
     const allProviders = await Provider.findAll(queryOptions);
 
