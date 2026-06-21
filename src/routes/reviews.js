@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { createReview, getProviderReviews, getReviewByBooking } = require('../controllers/reviewController');
+const { createReview, getProviderReviews, getReviewByJobRequest } = require('../controllers/reviewController');
 const { protect } = require('../middleware/auth');
 
 router.post('/', protect, createReview);
 router.get('/provider/:providerId', getProviderReviews);
-router.get('/booking/:bookingId', getReviewByBooking);
+router.get('/job-request/:jobRequestId', getReviewByJobRequest);
 
 module.exports = router;

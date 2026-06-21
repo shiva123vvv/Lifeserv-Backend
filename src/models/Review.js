@@ -7,12 +7,12 @@ const Review = sequelize.define('Review', {
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
-    bookingId: {
+    jobRequestId: {
         type: DataTypes.UUID,
         allowNull: false,
         unique: true,
         references: {
-            model: 'bookings',
+            model: 'job_requests',
             key: 'id'
         }
     },

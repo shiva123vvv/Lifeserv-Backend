@@ -1,52 +1,61 @@
 const asyncHandler = require('express-async-handler');
-const { Review, Booking, Provider, User } = require('../models');
+const { Review, JobRequest, Provider, User } = require('../models');
 
-// @desc    Create a review for a booking
+// @desc    Create a review for a completed job request
 // @route   POST /api/v1/reviews
 // @access  Private (Customer)
 const createReview = asyncHandler(async (req, res) => {
-    const { bookingId, rating, review, photos } = req.body;
+    const { jobRequestId, rating, review, photos } = req.body;
 
-    const booking = await Booking.findByPk(bookingId);
+    console.log('[ReviewController] createReview called:', { jobRequestId, rating, userId: req.user?.id });
 
-    if (!booking) {
-        res.status(404);
-        throw new Error('Booking not found');
+    if (!jobRequestId) {
+        res.status(400);
+        throw new Error('jobRequestId is required');
     }
 
-    if (booking.status !== 'completed') {
+    const jobRequest = await JobRequest.findByPk(jobRequestId);
+
+    if (!jobRequest) {
+        res.status(404);
+        throw new Error('Job request not found');
+    }
+
+    if (jobRequest.status !== 'completed') {
         res.status(400);
         throw new Error('You can only review completed services');
     }
 
-    if (booking.customerId !== req.user.id) {
+    if (jobRequest.customerId !== req.user.id) {
         res.status(401);
-        throw new Error('You are not authorized to review this booking');
+        throw new Error('You are not authorized to review this job request');
     }
 
-    const existingReview = await Review.findOne({ where: { bookingId } });
+    const existingReview = await Review.findOne({ where: { jobRequestId } });
     if (existingReview) {
         res.status(400);
-        throw new Error('You have already reviewed this booking');
+        throw new Error('You have already reviewed this job');
     }
 
     const newReview = await Review.create({
-        bookingId,
+        jobRequestId,
         customerId: req.user.id,
-        providerId: booking.providerId,
+        providerId: jobRequest.providerId,
         rating,
         review,
         photos: photos || []
     });
 
     // Update provider's average rating
-    const provider = await Provider.findByPk(booking.providerId);
+    const provider = await Provider.findByPk(jobRequest.providerId);
     if (provider) {
         const reviews = await Review.findAll({ where: { providerId: provider.id } });
         const totalRating = reviews.reduce((acc, curr) => acc + curr.rating, 0);
         provider.rating = parseFloat((totalRating / reviews.length).toFixed(1));
         await provider.save();
     }
+
+    console.log('[ReviewController] Review created successfully:', newReview.id);
 
     res.status(201).json({
         success: true,
@@ -76,12 +85,12 @@ const getProviderReviews = asyncHandler(async (req, res) => {
     });
 });
 
-// @desc    Get a review by booking ID
-// @route   GET /api/v1/reviews/booking/:bookingId
+// @desc    Get a review by job request ID
+// @route   GET /api/v1/reviews/job-request/:jobRequestId
 // @access  Public
-const getReviewByBooking = asyncHandler(async (req, res) => {
+const getReviewByJobRequest = asyncHandler(async (req, res) => {
     const review = await Review.findOne({
-        where: { bookingId: req.params.bookingId },
+        where: { jobRequestId: req.params.jobRequestId },
         include: [
             { 
                 model: User, 
@@ -105,6 +114,5 @@ const getReviewByBooking = asyncHandler(async (req, res) => {
 module.exports = {
     createReview,
     getProviderReviews,
-    getReviewByBooking
+    getReviewByJobRequest
 };
-

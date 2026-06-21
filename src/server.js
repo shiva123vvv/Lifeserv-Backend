@@ -155,6 +155,26 @@ const start = async () => {
             logger.warn(`⚠️ ALTER TABLE query failed: ${dbAlterErr.message}`);
         }
 
+        // ⚙️ Reviews table: migrate bookingId → jobRequestId
+        try {
+            await sequelize.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS "jobRequestId" UUID REFERENCES job_requests(id);`);
+            logger.info("✅ Reviews.jobRequestId column verified/created");
+        } catch (reviewAlterErr) {
+            logger.warn(`⚠️ Reviews migration warning: ${reviewAlterErr.message}`);
+        }
+        try {
+            await sequelize.query(`ALTER TABLE reviews DROP CONSTRAINT IF EXISTS "reviews_bookingId_key";`);
+            logger.info("✅ Dropped old reviews_bookingId_key constraint");
+        } catch (e) {
+            logger.warn(`⚠️ reviews_bookingId_key constraint note: ${e.message}`);
+        }
+        try {
+            await sequelize.query(`ALTER TABLE reviews ADD CONSTRAINT IF NOT EXISTS "reviews_jobRequestId_key" UNIQUE ("jobRequestId");`);
+            logger.info("✅ reviews_jobRequestId_key unique constraint verified");
+        } catch (e) {
+            logger.warn(`⚠️ reviews_jobRequestId_key note: ${e.message}`);
+        }
+
         try {
             await runWithRetry(async () => {
                 await sequelize.sync(); // Simple sync to bypass database locks

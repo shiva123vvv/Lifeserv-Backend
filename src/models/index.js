@@ -34,9 +34,9 @@ Booking.belongsTo(Provider, { foreignKey: 'providerId', as: 'provider' });
 Service.hasMany(Booking, { foreignKey: 'serviceId' });
 Booking.belongsTo(Service, { foreignKey: 'serviceId', as: 'service' });
 
-// Review Relationships
-Booking.hasOne(Review, { foreignKey: 'bookingId', as: 'review' });
-Review.belongsTo(Booking, { foreignKey: 'bookingId' });
+// Review Relationships (linked to JobRequest)
+JobRequest.hasOne(Review, { foreignKey: 'jobRequestId', as: 'review' });
+Review.belongsTo(JobRequest, { foreignKey: 'jobRequestId' });
 
 User.hasMany(Review, { foreignKey: 'customerId', as: 'writtenReviews' });
 Review.belongsTo(User, { foreignKey: 'customerId', as: 'author' });
