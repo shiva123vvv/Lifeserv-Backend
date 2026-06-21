@@ -38,7 +38,7 @@ const getBookings = asyncHandler(async (req, res) => {
         offset,
         include: [
             { model: Service, as: 'service' },
-            { model: User, as: 'customer', attributes: ['name', 'phone'] },
+            { model: User, as: 'customer', attributes: ['name', 'phone', 'address'] },
             { 
                 model: Provider, 
                 as: 'provider',
