@@ -10,7 +10,7 @@ const { Op } = require('sequelize');
 // @route   POST /api/v1/broadcasts
 // @access  Private (Customer)
 exports.createBroadcast = asyncHandler(async (req, res) => {
-    const { title, description, category, budget } = req.body;
+    const { title, description, category, budget, location } = req.body;
 
     if (!title || !description || !category) {
         return res.status(400).json({ success: false, message: "Missing required fields" });
@@ -26,6 +26,7 @@ exports.createBroadcast = asyncHandler(async (req, res) => {
         description,
         category,
         budget,
+        location,
         expiresAt
     });
 
@@ -63,7 +64,7 @@ exports.getBroadcasts = asyncHandler(async (req, res) => {
             status: 'active',
             expiresAt: { [Op.gt]: new Date() }
         },
-        include: [{ model: User, as: 'customer', attributes: ['name', 'photo'] }],
+        include: [{ model: User, as: 'customer', attributes: ['name', 'photo', 'address'] }],
         order: [['createdAt', 'DESC']]
     });
 
@@ -184,7 +185,7 @@ exports.getMyBroadcasts = asyncHandler(async (req, res) => {
 // @access  Private (Customer)
 exports.updateBroadcast = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { title, description, category, budget } = req.body;
+    const { title, description, category, budget, location } = req.body;
 
     const broadcast = await Broadcast.findByPk(id);
 
@@ -196,7 +197,8 @@ exports.updateBroadcast = asyncHandler(async (req, res) => {
         title: title || broadcast.title,
         description: description || broadcast.description,
         category: category || broadcast.category,
-        budget: budget || broadcast.budget
+        budget: budget || broadcast.budget,
+        location: location || broadcast.location
     });
 
     res.json({ success: true, data: broadcast });

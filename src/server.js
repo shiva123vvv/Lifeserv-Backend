@@ -149,6 +149,13 @@ const start = async () => {
 
         logger.info('📡 Synchronizing database schema...');
         try {
+            await sequelize.query(`ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS location JSONB;`);
+            logger.info("✅ Database broadcasts location column verified/created");
+        } catch (dbAlterErr) {
+            logger.warn(`⚠️ ALTER TABLE query failed: ${dbAlterErr.message}`);
+        }
+
+        try {
             await runWithRetry(async () => {
                 await sequelize.sync(); // Simple sync to bypass database locks
             }, 1, 1000);

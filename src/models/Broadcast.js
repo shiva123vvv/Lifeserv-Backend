@@ -28,6 +28,10 @@ const Broadcast = sequelize.define('Broadcast', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: true
     },
+    location: {
+        type: DataTypes.JSONB,
+        allowNull: true
+    },
     status: {
         type: DataTypes.ENUM('active', 'closed', 'expired'),
         defaultValue: 'active'
