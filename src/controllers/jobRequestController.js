@@ -141,7 +141,7 @@ const getProviderJobRequests = asyncHandler(async (req, res) => {
     const requests = await JobRequest.findAll({
         where: { providerId: provider.id },
         include: [
-            { model: User, as: 'customer', attributes: ['id', 'name', 'phone'] },
+            { model: User, as: 'customer', attributes: ['id', 'name', 'phone', 'address'] },
             { model: Service, as: 'service', attributes: ['id', 'name', 'description'] }
         ],
         order: [['createdAt', 'DESC']]
