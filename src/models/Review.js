@@ -7,9 +7,15 @@ const Review = sequelize.define('Review', {
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
+    // Legacy column — kept nullable for backward compatibility
+    bookingId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+    },
+    // Primary reference — links review to a JobRequest
     jobRequestId: {
         type: DataTypes.UUID,
-        allowNull: false,
+        allowNull: true,
         unique: true,
         references: {
             model: 'job_requests',
