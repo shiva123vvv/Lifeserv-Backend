@@ -3,9 +3,17 @@ const { JobRequest, Payment } = require('../models');
 const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
 
+const razorpayKeyId = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'rzp_test_SfGTyQ0tTWm0hH' && !process.env.RAZORPAY_KEY_ID.includes('placeholder')
+    ? process.env.RAZORPAY_KEY_ID
+    : 'rzp_test_T4I9D1yOqdU5uh';
+
+const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET && process.env.RAZORPAY_KEY_SECRET !== 'pE1GE7fwnvLzd1Ic3xcGEyDk' && !process.env.RAZORPAY_KEY_SECRET.includes('placeholder')
+    ? process.env.RAZORPAY_KEY_SECRET
+    : '39343UZ9RJo5G4IVtSLBMmih';
+
 const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder',
-    key_secret: process.env.RAZORPAY_KEY_SECRET || 'rzp_test_secret_placeholder',
+    key_id: razorpayKeyId,
+    key_secret: razorpayKeySecret,
 });
 
 // @desc    Create Razorpay order for job request
@@ -79,7 +87,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
 
     const sign = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSign = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || 'rzp_test_secret_placeholder')
+        .createHmac("sha256", razorpayKeySecret)
         .update(sign.toString())
         .digest("hex");
 
