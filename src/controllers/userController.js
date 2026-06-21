@@ -209,3 +209,51 @@ exports.updateAddress = async (req, res) => {
         });
     }
 };
+
+/**
+ * @desc    Switch user role between customer and provider
+ * @route   PATCH /api/v1/users/switch-role
+ * @access  Private
+ */
+exports.switchRole = async (req, res) => {
+    try {
+        const user = await User.findByPk(req.user.id);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        const newRole = user.role === 'provider' ? 'customer' : 'provider';
+        user.role = newRole;
+
+        if (newRole === 'provider') {
+            const { Provider } = require('../models');
+            let provider = await Provider.findOne({ where: { userId: user.id } });
+            if (!provider) {
+                logger.info(`Creating missing provider record for user ${user.id} during role switch`);
+                await Provider.create({
+                    userId: user.id,
+                    verificationStatus: 'pending'
+                });
+            }
+        }
+
+        await user.save();
+        logger.info(`User ${user.id} switched role to ${newRole}`);
+
+        res.status(200).json({
+            success: true,
+            message: `Successfully switched to ${newRole}`,
+            data: user
+        });
+    } catch (error) {
+        console.error("🔥 ROLE SWITCH ERROR:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error during role switch",
+            error: error.message
+        });
+    }
+};

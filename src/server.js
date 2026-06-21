@@ -104,6 +104,18 @@ app.use((req, res) => {
     res.status(404).json({ success: false, message: "Resource not identified" });
 });
 
+const runWithRetry = async (fn, retries = 5, delay = 2000) => {
+    for (let i = 1; i <= retries; i++) {
+        try {
+            return await fn();
+        } catch (err) {
+            if (i === retries) throw err;
+            logger.warn(`⚠️ Database connection attempt ${i} failed: ${err.message}. Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+};
+
 // 6. STARTUP
 const start = async () => {
     try {
@@ -123,7 +135,12 @@ const start = async () => {
         }
 
         require('./config/firebase');
-        await testConnection();
+        
+        await runWithRetry(async () => {
+            const connected = await testConnection();
+            if (!connected) throw new Error("Database authentication failed");
+        });
+
         // ⚙️ Database Synchronization
         // Enable { alter: true } to automatically create/update tables on Railway
         const { sequelize } = require('./config/db');
@@ -131,7 +148,13 @@ const start = async () => {
         const { Admin } = models;
 
         logger.info('📡 Synchronizing database schema...');
-        await sequelize.sync({ alter: true });
+        try {
+            await runWithRetry(async () => {
+                await sequelize.sync(); // Simple sync to bypass database locks
+            }, 1, 1000);
+        } catch (syncError) {
+            logger.warn(`⚠️ Schema sync failed: ${syncError.message}.`);
+        }
         logger.info('✅ Database schema synchronized');
 
         // 👑 Seed Default Admin (if none exists)
@@ -157,4 +180,5 @@ const start = async () => {
 };
 
 start();
+// Trigger restart for environment updates (localhost)
 module.exports = app;

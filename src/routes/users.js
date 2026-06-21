@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { updatePhone, completeOnboarding, updateProfile, updateAddress } = require('../controllers/userController');
+const { updatePhone, completeOnboarding, updateProfile, updateAddress, switchRole } = require('../controllers/userController');
 const { protect } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 
@@ -17,6 +17,9 @@ router.patch('/address', updateAddress);
 
 // 4. Onboarding Complete
 router.patch('/onboarding-complete', completeOnboarding);
+
+// 5. Switch Active Role
+router.patch('/switch-role', switchRole);
 
 // 🔥 TEMP: Debug route
 router.get("/test", (req, res) => {
