@@ -163,6 +163,13 @@ const start = async () => {
             logger.warn(`⚠️ Reviews migration warning: ${reviewAlterErr.message}`);
         }
         try {
+            // Make old bookingId nullable so reviews can be created via jobRequestId alone
+            await sequelize.query(`ALTER TABLE reviews ALTER COLUMN "bookingId" DROP NOT NULL;`);
+            logger.info("✅ Reviews.bookingId made nullable (legacy column)");
+        } catch (e) {
+            logger.warn(`⚠️ bookingId nullable note: ${e.message}`);
+        }
+        try {
             await sequelize.query(`ALTER TABLE reviews DROP CONSTRAINT IF EXISTS "reviews_bookingId_key";`);
             logger.info("✅ Dropped old reviews_bookingId_key constraint");
         } catch (e) {
