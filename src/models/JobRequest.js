@@ -80,6 +80,11 @@ const JobRequest = sequelize.define('JobRequest', {
     type: DataTypes.ENUM('pending', 'paid'),
     defaultValue: 'pending'
   },
+  paymentMethod: {
+    type: DataTypes.ENUM('online', 'cod'),
+    defaultValue: 'online',
+    allowNull: false
+  },
   customerCompleted: {
     type: DataTypes.BOOLEAN,
     defaultValue: false

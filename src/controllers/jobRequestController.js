@@ -17,7 +17,8 @@ const createJobRequest = asyncHandler(async (req, res) => {
         scheduledAt,
         customerName,
         customerPhone,
-        description
+        description,
+        paymentMethod
     } = req.body;
 
     console.log("📥 Incoming Description:", description);
@@ -55,7 +56,7 @@ const createJobRequest = asyncHandler(async (req, res) => {
     }
 
     const baseAmount = pricingType === "hourly" ? Number(hours) * Number(price) : Number(price);
-    const serviceFee = baseAmount * 0.02;
+    const serviceFee = paymentMethod === 'cod' ? 0 : baseAmount * 0.02;
     const totalAmount = baseAmount + serviceFee;
 
     const job = await JobRequest.create({
@@ -72,6 +73,7 @@ const createJobRequest = asyncHandler(async (req, res) => {
         customerName,
         customerPhone,
         description,
+        paymentMethod: paymentMethod === 'cod' ? 'cod' : 'online',
         paymentStatus: "pending",
         status: "pending"
     });
@@ -147,19 +149,19 @@ const getProviderJobRequests = asyncHandler(async (req, res) => {
         order: [['createdAt', 'DESC']]
     });
 
-    // 🛡️ SELF-HEALING: Auto-transition paid jobs to 'ongoing' if stuck
+    // 🛡️ SELF-HEALING: Auto-transition paid or COD accepted jobs to 'ongoing' if stuck
     for (let job of requests) {
-        if (job.paymentStatus === 'paid' && job.status === 'accepted') {
-            console.log(`🔧 [AutoFix] Transitioning funded job ${job.id} to ONGOING`);
+        if ((job.paymentStatus === 'paid' || job.paymentMethod === 'cod') && job.status === 'accepted') {
+            console.log(`🔧 [AutoFix] Transitioning job ${job.id} to ONGOING`);
             job.status = 'ongoing';
             await job.save();
         }
     }
 
-    // 🛡️ SECURE RESPONSE: Mask phone numbers if not paid
+    // 🛡️ SECURE RESPONSE: Mask phone numbers if not paid (unless Cash on Delivery)
     const secureRequests = requests.map(job => {
         const item = job.toJSON();
-        if (item.paymentStatus !== 'paid') {
+        if (item.paymentStatus !== 'paid' && item.paymentMethod !== 'cod') {
             item.customerPhone = "🔒 Contact hidden until payment";
             if (item.customer) item.customer.phone = "🔒 Contact hidden until payment";
         }
@@ -182,20 +184,20 @@ const getCustomerJobRequests = asyncHandler(async (req, res) => {
         order: [['createdAt', 'DESC']]
     });
 
-    // 🛡️ SELF-HEALING: Auto-transition paid jobs to 'ongoing' if stuck
+    // 🛡️ SELF-HEALING: Auto-transition paid or COD accepted jobs to 'ongoing' if stuck (Customer Side)
     for (let job of requests) {
-        if (job.paymentStatus === 'paid' && job.status === 'accepted') {
-            console.log(`🔧 [AutoFix] Transitioning funded job ${job.id} to ONGOING (Customer Side)`);
+        if ((job.paymentStatus === 'paid' || job.paymentMethod === 'cod') && job.status === 'accepted') {
+            console.log(`🔧 [AutoFix] Transitioning job ${job.id} to ONGOING (Customer Side)`);
             job.status = 'ongoing';
             await job.save();
         }
     }
 
-    // 🛡️ SECURE RESPONSE: Mask provider phone if not paid
+    // 🛡️ SECURE RESPONSE: Mask provider phone if not paid (unless Cash on Delivery)
     const secureRequests = requests.map(job => {
         const item = job.toJSON();
         console.log("📤 Sending Job Data to Customer:", { id: item.id, status: item.status, pay: item.paymentStatus });
-        if (item.paymentStatus !== 'paid' && item.provider && item.provider.user) {
+        if (item.paymentStatus !== 'paid' && item.paymentMethod !== 'cod' && item.provider && item.provider.user) {
             item.provider.user.phone = "🔒 Contact hidden until payment";
         }
         return item;
@@ -273,8 +275,8 @@ const completeJobRequest = asyncHandler(async (req, res) => {
         throw new Error('Job request not found');
     }
 
-    // Safety: Ensure payment is already processed
-    if (job.paymentStatus !== 'paid') {
+    // Safety: Ensure payment is already processed (unless Cash on Delivery)
+    if (job.paymentStatus !== 'paid' && job.paymentMethod !== 'cod') {
         res.status(400);
         throw new Error('Completion blocked: Engagement must be funded before finalization');
     }
@@ -313,6 +315,10 @@ const completeJobRequest = asyncHandler(async (req, res) => {
         const { sequelize } = require('../models');
         await sequelize.transaction(async (t) => {
             job.status = "completed";
+            if (job.paymentMethod === 'cod') {
+                job.paymentStatus = 'paid';
+                job.paidAt = new Date();
+            }
             await job.save({ transaction: t });
 
             // 💰 DISBURSEMENT: Credit specialist earnings & Update Stats (Base Price only)
