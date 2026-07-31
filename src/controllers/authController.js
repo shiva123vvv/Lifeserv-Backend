@@ -21,6 +21,15 @@ const googleLogin = asyncHandler(async (req, res) => {
         const decoded = await admin.auth().verifyIdToken(idToken);
         const { uid, email, name, picture } = decoded;
 
+        // Check if Firebase is properly initialized
+        if (!uid || !email) {
+            console.error("❌ Firebase not properly initialized or invalid token");
+            return res.status(500).json({
+                success: false,
+                error: "Authentication service unavailable. Please try again later."
+            });
+        }
+
         console.log("🔥 LOGIN ATTEMPT:", email);
 
         // 🔥 Check if user exists by firebaseUid

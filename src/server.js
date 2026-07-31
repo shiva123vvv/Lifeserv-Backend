@@ -16,6 +16,10 @@ const logger = require('./utils/logger');
 
 const app = express();
 
+// Trust proxy (required for Render and other cloud providers)
+// This fixes express-rate-limit X-Forwarded-For warning
+app.set('trust proxy', 1);
+
 // 1. SECURITY & LOGGING
 app.use(helmet());
 app.use(cors({ origin: '*', credentials: true }));
