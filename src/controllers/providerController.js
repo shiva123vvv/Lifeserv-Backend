@@ -96,6 +96,14 @@ const updateProviderProfile = asyncHandler(async (req, res) => {
             }
         });
 
+        if (req.body.location) {
+            const user = await User.findByPk(userId);
+            if (user) {
+                user.address = req.body.location;
+                await user.save();
+            }
+        }
+
         // 3. SYNC SERVICES WITH MASTER REGISTRY (CORE FIX)
         if (req.body.services) {
             const requestedServices = req.body.services;
@@ -281,7 +289,7 @@ const getProviderEarnings = asyncHandler(async (req, res) => {
     const jobRequests = await JobRequest.findAll({ where: { providerId: provider.id } });
 
     const totalJobs = jobRequests.filter(j => j.paymentStatus === 'paid').length;
-    const activeJobs = jobRequests.filter(j => j.paymentStatus === 'paid' && j.status === 'ongoing').length;
+    const activeJobs = jobRequests.filter(j => j.status === 'ongoing').length;
     
     // 🔥 PURE CALCULATION: Sum only the base 'price' field, explicitly ignoring service fees
     const totalEarnings = jobRequests

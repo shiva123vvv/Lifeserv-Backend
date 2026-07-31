@@ -1,4 +1,4 @@
-const { JobRequest, Provider, User, Service } = require('../models');
+const { JobRequest, Provider, User, Service, Payment } = require('../models');
 const asyncHandler = require('express-async-handler');
 
 // @desc    Create a new job request
@@ -85,7 +85,7 @@ const createJobRequest = asyncHandler(async (req, res) => {
     const jobData = job.toJSON();
     console.log("💾 [JobRequestController] Job before masking (Create):", jobData.id);
     
-    if (jobData.paymentStatus !== 'paid') {
+    if (jobData.paymentStatus !== 'paid' && jobData.paymentMethod !== 'cod') {
         jobData.customerPhone = "🔒 Contact hidden until payment";
     }
 
@@ -225,14 +225,14 @@ const acceptJobRequest = asyncHandler(async (req, res) => {
         throw new Error('Not authorized to respond to this request');
     }
 
-    job.status = "accepted";
+    job.status = job.paymentMethod === 'cod' ? 'ongoing' : 'accepted';
     await job.save();
 
     // 🛡️ SECURE RESPONSE: Mask phone number in response
     const jobData = job.toJSON();
     console.log("💾 [JobRequestController] Job before masking (Accept):", jobData.id);
 
-    if (jobData.paymentStatus !== 'paid') {
+    if (jobData.paymentStatus !== 'paid' && jobData.paymentMethod !== 'cod') {
         jobData.customerPhone = "🔒 Contact hidden until payment";
     }
 
@@ -318,6 +318,14 @@ const completeJobRequest = asyncHandler(async (req, res) => {
             if (job.paymentMethod === 'cod') {
                 job.paymentStatus = 'paid';
                 job.paidAt = new Date();
+                
+                await Payment.create({
+                    jobRequestId: job.id,
+                    transactionId: `cod_${job.id.replace(/-/g, "").slice(0, 20)}`,
+                    amount: job.totalAmount,
+                    status: 'completed',
+                    paymentMethod: 'cod'
+                }, { transaction: t });
             }
             await job.save({ transaction: t });
 

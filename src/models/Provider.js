@@ -52,10 +52,11 @@ const Provider = sequelize.define('Provider', {
     location: {
         type: DataTypes.JSONB,
         defaultValue: {
+            street: '',
+            place: '',
             city: '',
             state: '',
-            pincode: '',
-            addressLine: ''
+            pincode: ''
         }
     },
     rating: {

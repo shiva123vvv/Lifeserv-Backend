@@ -95,6 +95,18 @@ const getMe = asyncHandler(async (req, res) => {
     const user = await User.findByPk(req.user.id);
     if (user) {
         console.log(`🔥 [AuthSync] Syncing Identity for: ${user.email} (Role: ${user.role}, Onboarding: ${user.onboardingComplete})`);
+        
+        let address = user.address;
+        if (!address || (typeof address === 'object' && Object.keys(address).length === 0)) {
+            const provider = await Provider.findOne({ where: { userId: user.id } });
+            if (provider && provider.location) {
+                address = provider.location;
+                // Sync User address field
+                user.address = provider.location;
+                await user.save();
+            }
+        }
+
         res.json({
             success: true,
             data: {
@@ -104,7 +116,7 @@ const getMe = asyncHandler(async (req, res) => {
                 role: user.role,
                 phone: user.phone,
                 photo: user.photo,
-                address: user.address,
+                address: address,
                 onboardingComplete: user.onboardingComplete || false,
                 isVerified: user.isVerified
             }

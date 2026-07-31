@@ -169,11 +169,14 @@ exports.updateAddress = async (req, res) => {
             return res.status(401).json({ success: false, message: "Unauthorized: No user ID" });
         }
 
-        if (!address || !address.line || !address.city || !address.state || !address.pincode) {
+        const hasLegacyLine = address && address.line;
+        const hasNewStreetAndPlace = address && address.street && address.place;
+
+        if (!address || (!hasLegacyLine && !hasNewStreetAndPlace) || !address.city || !address.state || !address.pincode) {
             console.warn(`[AddressAPI] Validation Failed: Missing fields`);
             return res.status(400).json({
                 success: false,
-                message: "All address fields (line, city, state, pincode) are required."
+                message: "All address fields (street, place, city, state, pincode) are required."
             });
         }
 
