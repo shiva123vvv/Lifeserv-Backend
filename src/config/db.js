@@ -10,8 +10,57 @@ if (!dbUrl || dbUrl.includes('placeholder') || dbUrl.includes('@localhost')) {
     process.exit(1);
 }
 
+/**
+ * 🔧 Convert Supabase direct connection URL to pooler URL (IPv4)
+ * 
+ * Supabase direct URLs (db.[ref].supabase.co) resolve to IPv6 addresses,
+ * which don't work on Render's free tier. The pooler URL uses IPv4.
+ * 
+ * Direct:   postgresql://postgres:pass@db.[ref].supabase.co:5432/postgres
+ * Pooler:   postgresql://postgres.[ref]:pass@aws-0-[region].pooler.supabase.com:5432/postgres
+ * 
+ * If the URL is already a pooler URL or non-Supabase, it's returned as-is.
+ */
+function ensureIPv4Url(url) {
+    try {
+        const parsed = new URL(url);
+        
+        // Check if this is a Supabase direct connection URL
+        if (parsed.hostname && parsed.hostname.endsWith('.supabase.co') && 
+            parsed.hostname.startsWith('db.')) {
+            
+            // Extract project ref from hostname: db.[ref].supabase.co
+            const projectRef = parsed.hostname.replace('db.', '').replace('.supabase.co', '');
+            
+            // Get username and password from URL
+            const username = parsed.username || 'postgres';
+            const password = decodeURIComponent(parsed.password || '');
+            const port = parsed.port || '5432';
+            const database = parsed.pathname.slice(1) || 'postgres';
+            
+            // Try common Supabase pooler regions
+            // The user should set SUPABASE_POOLER_REGION env var if needed
+            const region = process.env.SUPABASE_POOLER_REGION || 'us-east-1';
+            const poolerHost = `aws-0-${region}.pooler.supabase.com`;
+            const poolerUser = `postgres.${projectRef}`;
+            
+            const poolerUrl = `postgresql://${poolerUser}:${encodeURIComponent(password)}@${poolerHost}:${port}/${database}`;
+            logger.info(`🔧 Converted Supabase direct URL to pooler URL (IPv4): ${poolerHost}`);
+            return poolerUrl;
+        }
+        
+        return url;
+    } catch (e) {
+        logger.warn(`⚠️ Could not convert DATABASE_URL to pooler URL: ${e.message}`);
+        return url;
+    }
+}
+
+// Convert to IPv4 pooler URL if needed
+const finalDbUrl = ensureIPv4Url(dbUrl);
+
 try {
-    const dbHost = new URL(dbUrl).hostname;
+    const dbHost = new URL(finalDbUrl).hostname;
     logger.info(`📡 Connecting to database host: ${dbHost}`);
 } catch (e) {
     logger.error('❌ Malformed DATABASE_URL: Could not parse hostname');
@@ -20,9 +69,9 @@ try {
 
 /**
  * 🌐 SCALABLE POSTGRESQL CONFIGURATION
- * Optimized for high-load Railway environments with SSL enabled by default.
+ * Optimized for high-load environments with SSL enabled by default.
  */
-const sequelize = new Sequelize(dbUrl, {
+const sequelize = new Sequelize(finalDbUrl, {
     dialect: 'postgres',
     protocol: 'postgres',
     logging: false, // Disable verbose SQL logging in production for performance
