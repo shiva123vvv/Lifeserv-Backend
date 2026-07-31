@@ -142,12 +142,22 @@ const start = async () => {
         });
 
         // ⚙️ Database Synchronization
-        // Enable { alter: true } to automatically create/update tables on Railway
         const { sequelize } = require('./config/db');
         const models = require('./models');
         const { Admin } = models;
 
-        logger.info('📡 Synchronizing database schema...');
+        // Step 1: Create tables first with sequelize.sync()
+        logger.info('📡 Synchronizing database schema (creating tables)...');
+        try {
+            await runWithRetry(async () => {
+                await sequelize.sync(); // Creates tables if they don't exist
+            }, 1, 1000);
+        } catch (syncError) {
+            logger.warn(`⚠️ Schema sync failed: ${syncError.message}.`);
+        }
+        logger.info('✅ Database tables synchronized');
+
+        // Step 2: Now run ALTER TABLE statements (tables exist now)
         try {
             await sequelize.query(`ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS location JSONB;`);
             logger.info("✅ Database broadcasts location column verified/created");
@@ -176,20 +186,13 @@ const start = async () => {
             logger.warn(`⚠️ reviews_bookingId_key constraint note: ${e.message}`);
         }
         try {
-            await sequelize.query(`ALTER TABLE reviews ADD CONSTRAINT IF NOT EXISTS "reviews_jobRequestId_key" UNIQUE ("jobRequestId");`);
+            // PostgreSQL doesn't support ADD CONSTRAINT IF NOT EXISTS
+            // Use DO block to check if constraint exists before adding
+            await sequelize.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'reviews_jobRequestId_key') THEN ALTER TABLE reviews ADD CONSTRAINT "reviews_jobRequestId_key" UNIQUE ("jobRequestId"); END IF; END $$;`);
             logger.info("✅ reviews_jobRequestId_key unique constraint verified");
         } catch (e) {
             logger.warn(`⚠️ reviews_jobRequestId_key note: ${e.message}`);
         }
-
-        try {
-            await runWithRetry(async () => {
-                await sequelize.sync(); // Simple sync to bypass database locks
-            }, 1, 1000);
-        } catch (syncError) {
-            logger.warn(`⚠️ Schema sync failed: ${syncError.message}.`);
-        }
-        logger.info('✅ Database schema synchronized');
 
         // 👑 Seed Default Admin (if none exists)
         const adminCount = await Admin.count();
