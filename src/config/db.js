@@ -31,6 +31,7 @@ const sequelize = new Sequelize(dbUrl, {
             require: true,
             rejectUnauthorized: false, // Required for Railway and most cloud DB providers
         },
+        family: 4, // Force IPv4 — fixes ENETUNREACH on Render (IPv6 not supported)
     },
     /**
      * Optimized Pooling for Scalability
